@@ -1,0 +1,12 @@
+application: tombapps
+version: 1
+runtime: python
+api_version: 1
+
+handlers:
+- url: /upcomingevents
+  script: upcomingevents.py
+
+- url: /admin/.*
+  script: $PYTHON_LIB/google/appengine/ext/admin
+  login: admin
