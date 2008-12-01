@@ -60,7 +60,7 @@ def FormatDateRange(start_date, end_date):
   if start_date == end_date:
     return "%s %d" % (
         start_date.strftime("%a, %B"),
-        start_date.month)  # no strftime for day of month without zero padding
+        start_date.day)  # no strftime for day of month without zero padding
   elif start_date.month == end_date.month:
     return "%s - %s, %s %d - %d" % (
         start_date.strftime("%a"),
@@ -73,9 +73,9 @@ def FormatDateRange(start_date, end_date):
         start_date.strftime("%a"),
         end_date.strftime("%a"),
         start_date.strftime("%B"),
-        start_date.month,  # no strftime for day of month without zero padding
+        start_date.day,  # no strftime for day of month without zero padding
         end_date.strftime("%B"),
-        end_date.month)  # no strftime for day of month without zero padding
+        end_date.day)  # no strftime for day of month without zero padding
 
 
 def EventStartEnd(calendar_service, cal, start_date, end_date, max_results=None):
