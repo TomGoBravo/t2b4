@@ -1,0 +1,32 @@
+<html>
+<head>
+<title>2009 Tournament Registration List</title>
+<script src="sorttable.js"></script>
+<style>
+tr.oddrow {
+  background: #fff;
+}
+
+tr.evenrow {
+  background: #F5FAFA;
+}
+</style>
+</head>
+<body>
+<a href="tourney_info.htm">Return to Tourney Info</a>
+Generated {{ now|date:"F j, Y" }} at {{ now|time:"H:i" }}.<p>
+Click on column name to sort. Initials in the waiver and dues column belong to the person who recorded it.
+<table class=sortable>
+<tr>
+<th>Name<th>Club<th>Paid<br>(may include t-shirt)<th>Notes<th>USOA 2009 Waiver<th>USOA 2009 Dues</tr>
+{% for r in row_list %}
+<tr class={% cycle evenrow,oddrow %}>
+  <td>{{ r.Name }}
+  <td>{{ r.Club }}
+  <td>{{ r.Paid_Amt }}
+  <td>{{ r.Reg_notes }}
+  <td>{{ r.Waiver }}
+  <td>{{ r.Dues }}
+</tr>
+{% endfor %}
+</table>
