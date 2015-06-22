@@ -1,12 +1,9 @@
-application: tombapps
+application: tombapps-hdr
 version: 1
-runtime: python
+runtime: python27
 api_version: 1
+threadsafe: yes
 
 handlers:
 - url: /upcomingevents
-  script: upcomingevents.py
-
-- url: /admin/.*
-  script: $PYTHON_LIB/google/appengine/ext/admin
-  login: admin
+  script: upcomingevents.app

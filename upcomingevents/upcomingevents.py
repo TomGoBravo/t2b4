@@ -1,4 +1,4 @@
-#!/usr/bin/python2.5
+#!/usr/bin/python2.7
 #
 #   Copyright 2008 Tom Brown
 #
@@ -17,35 +17,49 @@
 #
 # To run this on your local machine fetch
 # the latest gdata Python library from
-# http://code.google.com/p/gdata-python-client/ and create symlinks similar to
+# https://github.com/google/gdata-python-client and create symlinks similar to
 # these in this directory:
-# atom -> /usr/local/src/gdata.py-1.2.2/src/atom
-# gdata -> /usr/local/src/gdata.py-1.2.2/src/gdata
-# See this post and comments:
-# http://googledataapis.blogspot.com/2008/04/release-hounds-support-for-app-engine.html
+# atom -> gdata-python-client/src/atom
+# gdata -> gdata-python-client/src/gdata
 #
 # You also need the appengine SDK:
 # http://code.google.com/appengine/downloads.html
 #
-# Then change into this directory and run
-# /usr/local/src/google_appengine/dev_appserver.py
+# The dev_appserver doesn't have an API key for server applications
+# so it can't run this application. Instead run it locally
+# in a console by getting the key for public access from
+# https://console.developers.google.com/project/tombapps/apiui/credential and
+# then run
+# PYTHONPATH=../traceplus:~/Downloads/google_appengine:~/Downloads/google_appengine/lib/webob-1.2.3 ./upcomingevents.py <key>
+#
+# To run on appengine remotely
+# mkdir lib
+# pip install -t lib  google-api-python-client
+# PYTHONPATH=~/Downloads/google_appengine/lib/oauth2client ~/Downloads/google_appengine/appcfg.py -A tombapps-hdr update .
 
 
-import gdata.calendar.service
+from apiclient.discovery import build
+from google.appengine.api import memcache
 from google.appengine.ext import webapp
 from google.appengine.ext.webapp.util import run_wsgi_app
 from datetime import date
+from datetime import datetime
+from datetime import time
 from datetime import timedelta
+from oauth2client.appengine import AppAssertionCredentials
+import httplib2
 import re
-
-import gdata.urlfetch
-# Use urlfetch instead of httplib
-# http://googledataapis.blogspot.com/2008/04/release-hounds-support-for-app-engine.html
-gdata.service.http_request_handler = gdata.urlfetch
+import sys
 
 
-def GetCalendarService():
-  return gdata.calendar.service.CalendarService()
+
+def GetCalendarService(developerKey=None):
+  if developerKey:
+    return build('calendar', 'v3', developerKey=developerKey)
+  else:
+    credentials = AppAssertionCredentials(scope='https://www.googleapis.com/auth/calendar.readonly')
+    http = credentials.authorize(httplib2.Http(memcache))
+    return build('calendar', 'v3', http=http)
 
 
 def IsoToDate(iso_format):
@@ -78,28 +92,41 @@ def FormatDateRange(start_date, end_date):
         end_date.day)  # no strftime for day of month without zero padding
 
 
-def EventStartEnd(calendar_service, cal, start_date, end_date, max_results=None):
+def EventStartEnd(calendar_service, cal, max_future_days, max_results=None):
   """Return list of Events"""
-  query = gdata.calendar.service.CalendarEventQuery(cal, 'public', 'full')
-  query.start_min = start_date.isoformat()
-  query.start_max = end_date.isoformat()
-  query.orderby = 'starttime'
-  query.sortorder = 'ascend'
-  if max_results:
-    query.max_results = max_results
-  feed = calendar_service.CalendarQuery(query)
+  # The Calendar API v3 seems to return a "400 Bad Request" error if timeMin or
+  # timeMax don't include a timezone offset. Because it is okay to show events
+  # which recently passed I'll simply append 'Z' for UTC time and start display
+  # at yesterday so an event on date X in the US remains when the UTC date is
+  # X + 1 day. See:
+  # http://stackoverflow.com/questions/17133777/google-calendar-api-400-error
+  # https://code.google.com/p/google-apis-explorer/issues/detail?id=24
+  # https://developers.google.com/google-apps/calendar/quickstart/python
+  start_date = datetime.combine(date.today() - timedelta(days=1), time.min)
+  end_date = datetime.combine(date.today() + timedelta(days=max_future_days), time.min)
+  events = calendar_service.events().list(
+      calendarId=cal,
+      singleEvents=True,  # Needed for orderBy
+      orderBy='startTime',
+      maxResults=max_results,
+      timeMin=start_date.isoformat() + 'Z',
+      timeMax=end_date.isoformat() + 'Z'
+      ).execute()
   rv = []
-  for i, an_event in enumerate(feed.entry):
-    for a_when in an_event.when:
-      try:
-        start_time = IsoToDate(a_when.start_time)
-        # Subtract one from the end date
-        # http://groups.google.com/group/google-calendar-help-dataapi/browse_thread/thread/60f83f8eedac5485
-        end_time = IsoToDate(a_when.end_time) - timedelta(days=1)
-        rv.append(Event(title=an_event.title.text, start_date=start_time,
-                        end_date=end_time, url=an_event.GetHtmlLink().href))
-      except ValueError:
-        pass  # Don't handle non-allday events
+  for i, an_event in enumerate(events['items']):
+    if 'dateTime' in an_event['start']:
+      continue
+    try:
+      start_time = IsoToDate(an_event['start']['date'])
+      # End date is exclusive according to
+      # https://developers.google.com/google-apps/calendar/v3/reference/events
+      end_time = IsoToDate(an_event['end']['date']) - timedelta(days=1)
+      rv.append(Event(title=an_event['summary'], start_date=start_time,
+                      end_date=end_time, url=an_event['htmlLink']))
+    except ValueError:
+      pass  # Don't handle non-allday events
+    except AttributeError:
+      pass  # Don't handle baddly formed events
   return rv
 
 
@@ -147,13 +174,6 @@ def FormatJs(events):
   return rv
 
 
-def PrintJs(events):
-  print 'Content-Type: application/x-javascript'
-  print ''
-  for line in FormatJs(events):
-    print line
-
-
 class WebInterface(webapp.RequestHandler):
   def get(self):
     src = self.request.get("src")
@@ -162,13 +182,12 @@ class WebInterface(webapp.RequestHandler):
     output = self.request.get("output", "js")
     if not re.match(r"^text|js$", output):
       raise ValueError("Invalid output")
-    max_future_days = int(self.request.get("max-future-days", 90))
+    max_future_days = int(self.request.get("max-future-days", 210))
     max_results = int(self.request.get("max-results", 5))
 
     calendar_service = GetCalendarService()
     events = EventStartEnd(calendar_service,
-                           src, date.today(),
-                           date.today() + timedelta(days=max_future_days),
+                           src, max_future_days,
                            max_results)
 
     if output == "js":
@@ -179,16 +198,18 @@ class WebInterface(webapp.RequestHandler):
       self.response.out.write("\n".join(FormatText(events)))
 
 
-application = webapp.WSGIApplication([('/upcomingevents', WebInterface)], debug=True)
+app = webapp.WSGIApplication([('/upcomingevents', WebInterface)], debug=True)
 
 def main():
-  run_wsgi_app(application)
+  if len(sys.argv) == 2:
+    calendar_service = GetCalendarService(sys.argv[1])
+    events = EventStartEnd(calendar_service, "pt4s3b5b4ls13c6t9fjmm281no@group.calendar.google.com",
+                   210)
 
-  #calendar_service = GetCalendarService()
-  #events = EventStartEnd(calendar_service, "pt4s3b5b4ls13c6t9fjmm281no@group.calendar.google.com",
-  #               date.today(), date.today() + timedelta(days=90))
+    print "\n".join(FormatText(events))
+  else:
+    run_wsgi_app(app)
 
-  #PrintText(events)
 
 
 if __name__ == '__main__':
