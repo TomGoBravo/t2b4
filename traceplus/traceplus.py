@@ -1,5 +1,25 @@
 #!/usr/bin/python2.5
 
+# This library is a modified version of an original work, available (as of
+# Feburary 2018) at
+# https://github.com/google/transitfeed/blob/master/misc/traceplus.py
+# and released with the following licence:
+#
+# Copyright (C) 2009 Google Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
 # Example use:
 # def main():
 #   ...
@@ -28,13 +48,17 @@ def MakeExpandedTrace(frame_records):
           dump.append('     %s' % line)
     for local_name, local_val in frame_obj.f_locals.items():
       try:
+        local_type_name = type(local_val).__name__
+      except Exception as e:
+        local_type_name = '    Exception in type({}).__name__: {}'.format(local_name, e)
+      try:
         truncated_val = repr(local_val)[0:500]
-      except Exception, e:
-        dump.append('    Exception in str(%s): %s\n' % (local_name, e))
+      except Exception as e:
+        dump.append('    Exception in repr({}): {}\n'.format(local_name, e))
       else:
         if len(truncated_val) >= 500:
           truncated_val = '%s...' % truncated_val[0:499]
-        dump.append('    %s = %s\n' % (local_name, truncated_val))
+        dump.append('    {} = {} ({})\n'.format(local_name, truncated_val, local_type_name))
     dump.append('\n')
   return dump
 
@@ -64,7 +88,7 @@ def RunWithExpandedTrace(closure):
 
     dump.append(''.join(formatted_exception))
 
-    print ''.join(dump)
-    print
-    print dashes
+    print(''.join(dump))
+    print()
+    print(dashes)
     sys.exit(127)
